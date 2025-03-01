@@ -54,6 +54,7 @@ function sokoban(input) {
     firstGrid.boxPos = [startR, startC];
     const minPQ = new BinHeap((a, b) => a[0] - b[0], [[0, 0, [startR, startC], firstGrid, boxes]]);  // [heu, moves, [playerR, playerC], grid]
     visited.set(makeKey(firstGrid, startR, startC), [0, 0]);
+    let counter = 0, positions1k = 0;
 
     processQueue:
     while (minPQ.size) {
@@ -61,14 +62,14 @@ function sokoban(input) {
         // print2D(grid);
         visited.get(makeKey(grid, playerR, playerC))[1] = -1;  // set handle to -1
         if (goals.every(([_, r, c]) => grid[r][c] === 'B')) {
-            console.log(`FOUND SOLUTION! ${moves} moves`);
+            process.stdout.write(`\nFOUND SOLUTION! ${moves} moves\n`);
             const allGrids = [], allDirs = [];
             for (let thisGrid = grid; thisGrid !== null; thisGrid = thisGrid.parent) allGrids.push(thisGrid);
             for (const g of allGrids.reverse()) {
                 if (g.parent === null) g[g.boxPos[0]][g.boxPos[1]] = 'S';
                 else g[g.boxPos[0]][g.boxPos[1]] = { U: '↑', D: '↓', L: '←', R: '→'}[g.dirStrFromParent.at(-1)];
                 print2D(g);
-                console.log();
+                console.log("");
                 allDirs.push(g.dirStrFromParent);
             }
             console.log(`Directions: ${allDirs.slice(1).join(', ')}\n`);
@@ -108,25 +109,40 @@ function sokoban(input) {
                 }
             }
         }
+
+        counter++;
+        if (counter === 1000) {
+            counter = 0;
+            positions1k++;
+            process.stdout.write(`\rPositions examined: ${positions1k}k`);
+        }
         // console.log(playerReachableTiles);
     }
 
-    function bfs(g, r, c, bfsVisited=new Map([['' + [r, c], [0, '']]])) {
-        let q = [[r, c]], qIdx = 0;
+    function bfs(g, row, col) {
+        const bfsVisited = new Map([['' + [row, col], [0, '']]]);
+        bfsVisited.least = [row, col];
+        let q = [[row, col]], qIdx = 0;
         for ( ; qIdx < q.length; qIdx++) {
-            const [r2, c2] = q[qIdx];
-            const [dist, dirStr] = bfsVisited.get('' + [r2, c2]);
+            const [r, c] = q[qIdx];
+            const [dist, dirStr] = bfsVisited.get('' + [r, c]);
             for (const d of dirs4) {
-                const key = '' + d.move([r2, c2])
-                if (bfsVisited.has(key) || !". ".includes(g[r2 + d.r]?.[c2 + d.c])) continue;
+                const newCoord = [r2, c2] = d.move([r, c])
+                const key = '' + newCoord;
+                if (bfsVisited.has(key) || !". ".includes(g[r2]?.[c2])) continue;
                 bfsVisited.set(key, [dist + 1, dirStr + d.name]);
-                q.push([r2 + d.r, c2 + d.c, dist + 1]);
+                if (bfsVisited.least[0] > r2 || bfsVisited.least[0] === r2 && bfsVisited.least[1] > c2) bfsVisited.least = newCoord;
+                q.push([r + d.r, c + d.c, dist + 1]);
             }
         }
         return bfsVisited;
     }
 
-    function makeKey(grid, r, c) { return grid.map(x => x.join('')).join('') + ':' + r + ':' + c; }
+    function makeKey(grid, r, c) {
+        const reachable = bfs(grid, r, c);
+        return grid.map(x => x.join('')).join('') + ':' + reachable.least[0] + ':' + reachable.least[1];
+    }
+
     function heuristic(grid, boxArray) {
         const nearestBoxToGoal = Array(goals.length).fill(Infinity), nearestGoalToBox = Array(goals.length).fill(Infinity);
         for (const [b, [_, boxR, boxC]] of boxArray.entries()) {
