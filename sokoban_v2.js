@@ -1,7 +1,7 @@
 const BinHeap = require('./BinHeap');
 const { readFile } = require('./readFile');
 
-process.argv[2] = 'puzzle9.txt';
+// process.argv[2] = 'puzzle8.txt';
 let input = readFile(process.argv[2]);
 if (input instanceof Error) {
     console.error(`Unable to read/fetch "${process.argv[2]}"!`);
