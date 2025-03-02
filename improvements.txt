@@ -1,0 +1,18 @@
+Areas for improvement
+
+1.  Deadlock detection
+
+    Bad tiles: marking out 'bad' tiles which boxes should never land on.
+    - Obvious case is a corner. However, any tile which only allows pushes to bad tiles is itself bad. This should remove
+    entire sides, e.g. tiles marked '?' below are all bad.
+    - Find SCCs
+
+    #?????#
+    #######
+
+    A goal tile is never bad.
+    
+2.  Express push - MAY CAUSE SOLUTION TO NOT BE SHORTEST
+
+    (Intuition: if a box is pushed down a narrow corridor, and the new box position is a 'graph cut', then it makes sense to
+     continue pushing the box until more options are available.)

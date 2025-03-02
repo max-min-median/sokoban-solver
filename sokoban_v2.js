@@ -1,25 +1,21 @@
 const BinHeap = require('./BinHeap');
 const { readFile } = require('./readFile');
 
-// process.argv[2] = 'puzzle8.txt'
-let input = readFile(process.argv[2]);  // <-- select input
+process.argv[2] = 'puzzle9.txt';
+let input = readFile(process.argv[2]);
 if (input instanceof Error) {
     console.error(`Unable to read/fetch "${process.argv[2]}"!`);
     process.exit(1);
 }
 if (input.at(-1) === '') input = input.slice(0, -1);
 
-/* Useful constants */
-// const { curry, reverseCurry, deepMap, deepCopy, gridify, numerify, removeEmptyRows, makeArray, gcd, lcm, egcd, print2D, match, splitArray,
-//     splitArrayByEmptyRows, chunkArray, deepSearch, deepForEach, dirs4, memoize, memoizeStr, perms, choices, partitions, findSubsets, arrayCartesianProduct,
-// } = require('../AoC_utils');
 const curry = (f, ...args) => args.length >= f.length ? f(...args) : (...moreArgs) => curry(f, ...args, ...moreArgs);
 const deepMap = curry((f, x, ...indices) => x?.map ? x.map((y, i) => deepMap(f, y, ...indices, i)) : f(x, ...indices));
 const deepCopy = deepMap(x => x);
 const gridify = deepMap(y => [...y]);
 const deepForEach = curry((f, x) => { deepMap(f, x) });
 const deepSearch = curry((f, x) => { const arr = []; deepForEach((v, ...indices) => f(v, ...indices) && arr.push([v, ...indices]))(x); return arr; });
-const print2D = (x, sep='') => console.log(x.map(y => y.join(sep)).join('\n'));
+const print2D = (x, sep='') => process.stdout.write(x.map(y => y.join(sep)).join('\n') + '\n');
 
 const dir$_U = [-1, 0], dir$_D = [1, 0], dir$_L = [0, -1], dir$_R = [0, 1];
 Object.assign(dir$_U, {R: dir$_R, L: dir$_L, B: dir$_D, name: 'up', idx: 0, r: -1, c: 0, move: function (arr, n=1) { arr[0] += n * this.r, arr[1] += n * this.c; return arr; } });
@@ -35,20 +31,19 @@ Object.assign(dirs4, { up: dir$_U, down: dir$_D, left: dir$_L, right: dir$_R, ch
 
 dirs4.rename("UDLR");
 
-/* process input here */
 sokoban(input);
 
 function sokoban(input) {
     const visited = new Map;  // gridKey => [moves, handle (in minPQ)]
     const width = Math.max(...input.map(x => x.length));
     let firstGrid = gridify(input).map(x => x.concat(Array(width - x.length).fill(' ')));
-    const goals = deepSearch(x => '.B'.includes(x))(firstGrid);
-    const boxes = deepSearch(x => 'bB'.includes(x))(firstGrid);
-    if (deepSearch(x => 'bB'.includes(x))(firstGrid).length !== goals.length) throw new Error('different numbers of boxes and goals!');
     const startPos = deepSearch(x => x === 'S')(firstGrid);
     if (startPos.length === 0) throw new Error(`Player position not found! Please indicate player with an 'S'`);
     else if (startPos.length > 1) throw new Error(`Too many player positions ('S') found! There should only be one player position`);
     const [startR, startC] = startPos[0].slice(1);
+    const [adjList, revList, boxes, goals, goalArray] = makeGraph(firstGrid, startR, startC);
+    const goodBoxTiles = new Set([...reachableGoals(adjList, revList, goals)].filter(([x, y]) => y.size !== 0).map(([x, y]) => x));
+    if (boxes.length !== goals.size) throw new Error('different numbers of boxes and goals!');
     firstGrid[startR][startC] = ' ';
     firstGrid.parent = null;
     firstGrid.dirStrFromParent = '';
@@ -60,10 +55,17 @@ function sokoban(input) {
     processQueue:
     while (minPQ.size) {
         const [heu_unused, moves, [playerR, playerC], grid, boxes] = minPQ.pop();
-        // print2D(grid);
+        counter++;
+        if (counter === 1000) {
+            counter = 0;
+            positions1k++;
+            process.stdout.write(`\rPositions examined: ${positions1k}k`);
+        }
+
         visited.get(makeKey(grid, playerR, playerC))[1] = -1;  // set handle to -1
-        if (goals.every(([_, r, c]) => grid[r][c] === 'B')) {
-            process.stdout.write(`\nFOUND SOLUTION! ${moves} moves\n`);
+
+        // check for win condition
+        if (goalArray.every(([r, c]) => grid[r][c] === 'B')) {
             const allGrids = [], allDirs = [];
             for (let thisGrid = grid; thisGrid !== null; thisGrid = thisGrid.parent) allGrids.push(thisGrid);
             for (const g of allGrids.reverse()) {
@@ -77,51 +79,38 @@ function sokoban(input) {
             process.stdout.write(`${allDirs.slice(1).join(', ')}\n`);
             return;
         }
-        const playerReachableTiles = bfs(grid, playerR, playerC);
+
+        const playerReachableTiles = bfsReachable(grid, playerR, playerC);
         
-        /* Test for boxes stuck in a corner */
         for (const [i, box] of boxes.entries()) {
-            const r = box[1], c = box[2];
-            if ((grid[r - 1]?.[c] === '#' || grid[r + 1]?.[c] === '#') && (grid[r][c - 1] === '#' || grid[r][c + 1] === '#'))
-                if (box[0] === 'b') continue processQueue;
-                else continue;
-            else {
-                for (const d of dirs4) {
-                    const accessTile = '' + [r - d.r, c - d.c];
-                    if (". ".includes(grid[r + d.r]?.[c + d.c]) && playerReachableTiles.has(accessTile)) {
-                        const newGrid = deepCopy(grid);
-                        newGrid[r][c] = newGrid[r][c] === 'B' ? '.' : ' ';
-                        newGrid[r + d.r][c + d.c] = newGrid[r + d.r][c + d.c] === '.' ? 'B' : 'b';
-                        const thisBoxes = boxes.with(i, [newGrid[r + d.r][c + d.c], r + d.r, c + d.c]);
-                        const thisKey = makeKey(newGrid, r, c);
-                        const [distToTile, dirsToTile] = playerReachableTiles.get(accessTile);
-                        const thisMoves = moves + distToTile + 1;
-                        const prev = visited.get(thisKey);
-                        if (prev !== undefined && prev[0] <= thisMoves) continue;
-                        newGrid.parent = grid;
-                        newGrid.dirStrFromParent = dirsToTile + d.name;
-                        newGrid.boxPos = [r, c];
-                        if (prev === undefined || prev[1] === -1) {
-                            visited.set(thisKey, [thisMoves, minPQ.push([thisMoves + heuristic(newGrid, thisBoxes), thisMoves, [r, c], newGrid, thisBoxes])]);
-                        } else if (prev[0] > thisMoves) {
-                            prev[0] = thisMoves;
-                            minPQ.modify(prev[1], [thisMoves + heuristic(newGrid, thisBoxes), thisMoves, [r, c], newGrid, thisBoxes]);
-                        }
-                    }
+            const [r, c] = box;
+            for (const d of dirs4) {
+                if (!'. '.includes(grid[r + d.r]?.[c + d.c])) continue;
+                const accessTile = '' + [r - d.r, c - d.c], destTile = '' + [r + d.r, c + d.c];
+                if (!goodBoxTiles.has(destTile) || !playerReachableTiles.has(accessTile)) continue;
+                const newGrid = deepCopy(grid);
+                newGrid[r][c] = newGrid[r][c] === 'B' ? '.' : ' ';
+                newGrid[r + d.r][c + d.c] = newGrid[r + d.r][c + d.c] === '.' ? 'B' : 'b';
+                const thisBoxes = boxes.with(i, [r + d.r, c + d.c]);
+                const thisKey = makeKey(newGrid, r, c);
+                const [distToTile, dirsToTile] = playerReachableTiles.get(accessTile);
+                const thisMoves = moves + distToTile + 1;
+                const prev = visited.get(thisKey);
+                if (prev !== undefined && prev[0] <= thisMoves) continue;
+                newGrid.parent = grid;
+                newGrid.dirStrFromParent = dirsToTile + d.name;
+                newGrid.boxPos = [r, c];
+                if (prev === undefined || prev[1] === -1) {
+                    visited.set(thisKey, [thisMoves, minPQ.push([thisMoves + heuristic(newGrid, thisBoxes), thisMoves, [r, c], newGrid, thisBoxes])]);
+                } else if (prev[0] > thisMoves) {
+                    prev[0] = thisMoves;
+                    minPQ.modify(prev[1], [thisMoves + heuristic(newGrid, thisBoxes), thisMoves, [r, c], newGrid, thisBoxes]);
                 }
             }
         }
-
-        counter++;
-        if (counter === 1000) {
-            counter = 0;
-            positions1k++;
-            process.stdout.write(`\rPositions examined: ${positions1k}k`);
-        }
-        // console.log(playerReachableTiles);
     }
 
-    function bfs(g, row, col) {
+    function bfsReachable(g, row, col) {
         const bfsVisited = new Map([['' + [row, col], [0, '']]]);
         bfsVisited.least = [row, col];
         let q = [[row, col]], qIdx = 0;
@@ -131,7 +120,7 @@ function sokoban(input) {
             for (const d of dirs4) {
                 const newCoord = [r2, c2] = d.move([r, c])
                 const key = '' + newCoord;
-                if (bfsVisited.has(key) || !". ".includes(g[r2]?.[c2])) continue;
+                if (bfsVisited.has(key) || !'. '.includes(g[r2]?.[c2])) continue;
                 bfsVisited.set(key, [dist + 1, dirStr + d.name]);
                 if (bfsVisited.least[0] > r2 || bfsVisited.least[0] === r2 && bfsVisited.least[1] > c2) bfsVisited.least = newCoord;
                 q.push([r + d.r, c + d.c, dist + 1]);
@@ -140,15 +129,53 @@ function sokoban(input) {
         return bfsVisited;
     }
 
+    /**
+     * A multi-purpose function which creates a digraph adjacency list from a sokoban grid.
+     * The adjacency list is a `Map<String, Set>`.
+     * Also returns the following lists: locations of boxes, reverse adjacency list, locations of goals, start position.
+     */ 
+    function makeGraph(grid, r, c, adjList = new Map, revList = new Map, boxes=[], goalArray=[]) {
+        const key = '' + [r, c];
+        adjList.set(key, new Set);
+        const thisCell = grid[r][c];
+        if (thisCell === 'S') grid[r][c] = ' ';
+        if ('bB'.includes(thisCell)) boxes.push([r, c]);
+        if ('.B'.includes(thisCell)) goalArray.push([r, c]);
+        for (const d of dirs4) {
+            if (!" .bB".includes(grid[r + d.r]?.[c + d.c])) continue;
+            const otherKey = '' + [r + d.r, c + d.c];
+            if (" .bB".includes(grid[r - d.r]?.[c - d.c])) {
+                adjList.get(key).add(otherKey);
+                if (!revList.has(otherKey)) revList.set(otherKey, new Set);
+                revList.get(otherKey).add(key);
+            }
+            if (!adjList.has(otherKey)) makeGraph(grid, r + d.r, c + d.c, adjList, revList, boxes, goalArray);
+        }
+        return [adjList, revList, boxes, new Set(goalArray.map(x => '' + x)), goalArray];
+    }
+
+    function reachableGoals(adjList, revList, goals) {
+        const reachable = new Map([...adjList].map(([x, ]) => [x, new Set]));
+        for (const goalKey of goals) dfs(goalKey, goalKey);
+        return reachable;
+
+        function dfs(gKey, thisKey, visited = new Set) {
+            visited.add(thisKey);
+            reachable.get(thisKey).add(gKey);
+            for (const neighbor of revList.get(thisKey) ?? [])
+                if (!visited.has(neighbor)) dfs(gKey, neighbor, visited);
+        }
+    }
+
     function makeKey(grid, r, c) {
-        const reachable = bfs(grid, r, c);
+        const reachable = bfsReachable(grid, r, c);
         return grid.map(x => x.join('')).join('') + ':' + reachable.least[0] + ':' + reachable.least[1];
     }
 
     function heuristic(grid, boxArray) {
-        const nearestBoxToGoal = Array(goals.length).fill(Infinity), nearestGoalToBox = Array(goals.length).fill(Infinity);
-        for (const [b, [_, boxR, boxC]] of boxArray.entries()) {
-            for (const [g, [_, goalR, goalC]] of goals.entries()) {
+        const nearestBoxToGoal = Array(goals.size).fill(Infinity), nearestGoalToBox = Array(goals.size).fill(Infinity);
+        for (const [b, [boxR, boxC]] of boxArray.entries()) {
+            for (const [g, [goalR, goalC]] of goalArray.entries()) {
                 const manh = Math.abs(boxR - goalR) + Math.abs(boxC - goalC);
                 if (manh < nearestBoxToGoal[g]) nearestBoxToGoal[g] = manh;
                 if (manh < nearestGoalToBox[b]) nearestGoalToBox[b] = manh;
