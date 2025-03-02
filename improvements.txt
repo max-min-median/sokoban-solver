@@ -5,10 +5,11 @@ Areas for improvement
     Bad tiles: marking out 'bad' tiles which boxes should never land on.
     - Obvious case is a corner. However, any tile which only allows pushes to bad tiles is itself bad. This should remove
     entire sides, e.g. tiles marked '?' below are all bad.
-    - Find SCCs
+    - Find SCCs?
 
-    #?????#
-    #######
+    ######B#######
+      B     #
+    #############
 
     A goal tile is never bad.
     
