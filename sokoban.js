@@ -1,7 +1,7 @@
 const BinHeap = require('./BinHeap');
 const { readFile } = require('./readFile');
 
-// process.argv[2] = 'puzzle9.txt';
+process.argv[2] = 'puzzle8.txt';
 let input = readFile(process.argv[2]);
 if (input instanceof Error) {
     console.error(`Unable to read/fetch "${process.argv[2]}"!`);
@@ -75,11 +75,10 @@ function sokoban(input) {
             for (const g of allGrids.reverse()) {
                 if (g.parent === null) g[g.boxPos[0]][g.boxPos[1]] = 'S';
                 else g[g.boxPos[0]][g.boxPos[1]] = { U: '↑', D: '↓', L: '←', R: '→'}[g.dirStrFromParent.at(-1)];
-                print2D(g);
-                console.log("");
                 allDirs.push(g.dirStrFromParent);
             }
-            process.stdout.write(`FOUND SOLUTION!\nPositions calculated: ${positions1k * 1000 + counter}\n`);
+            printGrids(allGrids);
+            process.stdout.write(`\nFOUND SOLUTION!\nPositions calculated: ${positions1k * 1000 + counter}\n`);
             process.stdout.write(`Box-pushes: ${allDirs.length - 1}\n`);
             process.stdout.write(`     Moves: ${moves}\n`);
             process.stdout.write(`Directions: ${allDirs.slice(1).join(', ')}\n`);
@@ -196,6 +195,21 @@ function sokoban(input) {
             }
         }
         return (nearestBoxToGoal.reduce((prev, v) => prev + v) + nearestGoalToBox.reduce((prev, v) => prev + v)) / 2;
+    }
+
+    function printGrids(grids, screenWidth=100) {
+        const SPACING = 3;
+        const gridsPerRow = 1 + Math.floor((screenWidth - width) / (width + SPACING));
+        const rows = firstGrid.length;
+        const toPrint = Array(Math.ceil(grids.length / gridsPerRow) * (rows + 1) - 1).fill(0).map(x => []);
+        const allGridRows = grids.flat();
+        for (let i = 0, rowAt = -rows - 1, rowDone = rows * gridsPerRow; i < allGridRows.length; i++) {
+            if (i % rowDone === 0) rowAt += rows + 1;
+            const offset = i % rows;
+            toPrint[rowAt + offset].push(allGridRows[i]);
+        }
+        const printStr = toPrint.map(row => row.map(gr => gr.join('')).join(' '.repeat(SPACING))).join('\n');
+        process.stdout.write(`\n${printStr}\n`);
     }
 }
 
